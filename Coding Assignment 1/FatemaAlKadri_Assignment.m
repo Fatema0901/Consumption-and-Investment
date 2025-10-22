@@ -91,10 +91,10 @@ while diffV > tol && iter < max_iter
         end
     end
 
-    % Convergence check: norm of the change in V (vector 2-norm; hint allows 'norm')
+    % Convergence check: norm of the change in V 
     diffV = norm(V - V_old);
     if mod(iter,50)==0
-        % Light progress ping so I can tell in class that it’s iterating:
+        % From the light progress I can tell that it’s iterating:
         disp(['Iter ', num2str(iter), '  ||V - V_old|| = ', num2str(diffV)]);
     end
 end
@@ -120,7 +120,7 @@ end
 figure;
 hold on;
 for j = 1:Ny
-    plot(agrid, V(:,j), 'LineWidth', 1.2);  % explain: 'plot' draws lines
+    plot(agrid, V(:,j), 'LineWidth', 1.2);  
 end
 xlabel('Assets a'); ylabel('Value V(a,y)');
 title('Converged Value Function for all y-states');
@@ -158,21 +158,20 @@ y_path  = zeros(T,1);      % simulated continuous y via AR(1)
 iy_path = zeros(T,1);      % index of nearest ygrid each period
 c_path  = zeros(T,1);
 
-% Initial states (start from mid asset grid and mean income)
+% Initial states (starts from mid asset grid and mean income)
 iy_path(1) = round((Ny+1)/2);
 y_path(1)  = ygrid(iy_path(1));
-ia         = round((Na+1)/2);      % start in the middle of the asset grid
+ia         = round((Na+1)/2);      % starts in the middle of the asset grid
 a_path(1)  = agrid(ia);
 
-% Generate shocks eps_t ~ N(0, sigma^2) using randn (standard normal).
-% (Not in the hint list; explanation: randn draws i.i.d. N(0,1) numbers.)
+% Generating shocks eps_t ~ N(0, sigma^2) using randn (standard normal).
 eps = sigma * randn(T,1);
 
 for t = 1:T-1
     % Income AR(1): y_{t+1} = rho*y_t + eps_{t+1}
     y_path(t+1) = rho * y_path(t) + eps(t+1);
 
-    % Map continuous y_t to the nearest index on ygrid (nearest-neighbor projection)
+    % Mapping continuous y_t to the nearest index on ygrid (nearest-neighbor projection)
     [~, iy] = min(abs(ygrid - y_path(t)));
     iy_path(t) = iy;
 
@@ -182,7 +181,7 @@ for t = 1:T-1
 
     % Consumption from budget: c_t = a_t + exp(y_t) - a_{t+1}/(1+r)
     c_t = agrid(ia) + exp(y_path(t)) - a_next/(1+r);
-    % Enforce positivity in simulation (should already be ensured by policy):
+    % Enforcing positivity in simulation (should already be ensured by policy):
     if c_t <= 0
         c_t = NaN; % flag if ever violated (should not)
     end
@@ -192,7 +191,7 @@ for t = 1:T-1
     a_path(t+1) = a_next;
     ia = ia_next;
 end
-% Fill last-period indices cleanly
+% Filling last-period indices cleanly
 [~, iy] = min(abs(ygrid - y_path(T))); iy_path(T) = iy;
 c_path(T) = agrid(ia) + exp(y_path(T)) - a_path(T)/(1+r);
 
@@ -202,7 +201,7 @@ y_sim  = y_path(burn+1:end);
 a_sim  = a_path(burn+1:end);
 c_sim  = c_path(burn+1:end);
 
-% Tile-style time-series view using tiledlayout (explained since not in hint list):
+% Tile-style time-series view using tiledlayout
 % 'tiledlayout' organizes multiple subplots neatly; 'nexttile' selects each panel.
 figure;
 tiledlayout(3,1);
