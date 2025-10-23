@@ -1,1 +1,1 @@
-Repository for Consumption and Investment class, Fall 2025.
+Repository for Consumption and Investment Dynamics class, Fall 2025.
