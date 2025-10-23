@@ -10,6 +10,8 @@ r     = 0.04;      % interest rate
 rho   = 0.9;       % persistence of income y
 sigma = 0.04;      % standard deviation of income shocks (eps ~ N(0,sigma^2))
 
+
+
 %% -----------------------------------------------------------
 %  2) STATE SPACES: assets 'a' (choose) and income 'y' (Tauchen)
 % ------------------------------------------------------------
@@ -20,32 +22,48 @@ agrid = linspace(amin, amax, Na)';   % assets as a COLUMN vector for easy indexi
 
 Ny = 7;                        % income grid size 
 mu = 0; m = 3;                 % Tauchen inputs: mean 0, span +/- m*std of stationary y
-% Tauchen returns: ygrid (levels of AR(1) state) and P (Ny x Ny transition probs)
+% Tauchen returns: ygrid (levels of AR(1) state) and P (Ny x Ny transition probability matrix)
 [ygrid, P] = Tauchen(Ny, mu, rho, sigma, m);
 
-% Here exp(y) is actual income level in the budget constraint.
+% Since income enters in levels in the budget constraint, I exponentiate the grid to obtain ey = exp(ygrid) 
 ey = exp(ygrid);               % pointwise income levels for each y-state
+
+
 
 %% ----------------------------------------------------
 %  3) UTILITY helper as an inline function handle
 % ----------------------------------------------------
 % CRRA utility with gamma != 1. Return -Inf if c<=0 to enforce c>0 constraint.
 u = @(c) ((c).^(1-gamma)) ./ (1-gamma);
-u_neg_inf = -1.0e10;   % large negative fallback in case I avoid -Inf numerics
+u_neg_inf = -1.0e10;   % large negative number substitutes for negative infinity when consumption becomes non-positive
+
 
 %% ----------------------------------------------------
 %  4) INITIALIZE VALUE FUNCTION AND POLICY STORAGE
 % ----------------------------------------------------
-V      = zeros(Na, Ny);      % initial guess: zeros everywhere 
-V_old  = V;                   % previous iterate
-polAix = ones(Na, Ny);       % indices of optimal a' choices (store argmax)
-polA   = agrid(polAix);      % levels of a' (will overwrite after convergence)
-polC   = zeros(Na, Ny);      % consumption policy c(a,y)
 
+        V      = zeros(Na, Ny);      % initial guess for value function: zeros everywhere 
+        V_old  = V;                   % previous iterate
+        % Here I'm starting with V(a,y)=0 for every combination of assets and income
+        %V_old is just a copy used to compare successive iterations.
+
+
+% Optimal policy functions for savings and consumption are below: 
+polAix = ones(Na, Ny);       % stores the index of the optimal future asset choice for each (a, y)
+polA   = agrid(polAix);      % maps those indices to the actual asset levels on the grid.
+polC   = zeros(Na, Ny);      % will hold the corresponding optimal consumption policy c(a,y)
+
+% Convergence and Iteration Control:
 tol      = 1e-9;             % tolerance on norm difference
-max_iter = 5000;             % safety cap (per hint: prevent infinite loop)
+max_iter = 5000;             % safety cap (prevent infinite loop)
 iter     = 0;
 diffV    = inf;
+
+% tol = 10 ^ (−9) : the accuracy target — the loop stops when the value function barely changes between iterations.
+% max_iter = 5000: safety cap to prevent infinite loops (as discussed earlier).
+% iter = 0: counter for how many iterations I’ve done.
+% diffV = inf: initialize as “infinity” so the while loop runs at least once.
+
 
 %% ----------------------------------------------------
 %  5) VALUE FUNCTION ITERATION (Bellman)
@@ -53,48 +71,69 @@ diffV    = inf;
 % Bellman: V(a,y) = max_{a' in grid} { u(c) + beta * E_y'[ V(a',y') | y ] }
 % where c = a + exp(y) - a'/(1+r), and c>0.
 
-% Precompute the expectation term structure:
-% For each y (row j), and for each a' index k, we need E[V(a'_k, y')|y_j]
+% For each y (row j), and for each a' index k, I need E[V(a'_k, y')|y_j]
 % That is sum_{y'} P(j,y') * V_old(k,y'). I am computing inside the loop to stay transparent.
 
 while diffV > tol && iter < max_iter
-    V_old = V;                 % keep a copy to measure convergence
+    V_old = V;                 % keep updating the value function untill convergence
     iter  = iter + 1;
 
-    % Loop over current states (a_i, y_j)
+
+% Loop over current states (a_i, y_j)
     for j = 1:Ny              % income state index
         for i = 1:Na          % asset state index
 
-            % Candidate values for all possible a' choices from the grid:
-            % Compute consumption for each candidate a'_k
-            c_all = agrid(i) + ey(j) - agrid./(1+r);   % vectorized over k = 1..Na
+% Candidate values for all possible a' choices from the grid &
+% chooses the one that gives the highest total value
 
-            % Enforce c>0. For invalid c, assign very low utility.
+
+%%Step 1%%  Computing consumption for each candidate a'_k
+            c_all = agrid(i) + ey(j) - agrid./(1+r);   
+
+
+%%Step 2%%  Enforcing c>0. 
+            % For invalid c, assigning it to the very large negative value
             util = u(c_all);
             util(c_all <= 0) = u_neg_inf;  % using big negative so max ignores them
 
-            % Expected continuation value for each candidate a'_k:
+
+%%Step 3%%  Expected continuation value for each candidate a'_k:
             % For fixed current y=j, the expectation over y' is row j of P.
-            EV = (V_old * P(j, :)')';  % WRONG SHAPE if used directly; keep it explicit below
-            % To stay crystal clear, compute EV for each k one-by-one:
+            EV = (V_old * P(j, :)')';  % WRONG SHAPE if used directly; keeping it explicit below
+            % Computing EV for each k one-by-one:
             EV_k = zeros(Na,1);
             for k = 1:Na
                 % dot of row j in P with row k of V_old
                 EV_k(k) = P(j, :) * V_old(k, :)';
             end
+            % I am considering at each possible future asset choice a'_k
+            % For that choice, the next-period value function depends on future income y'
 
-            % Right-hand side of Bellman for each a'_k
+
+%%Step 4%%  Combining current and future payoff: 
             RHS = util + beta * EV_k;
+            % This creates Right-hand side of Bellman for each a'_k
+  
 
-            % Take the best a' (argmax over k)
+%%Step 5%%  Taking the best a' (argmax over k)
             [V(i,j), polAix(i,j)] = max(RHS);
+
+            % Here, The highest possible total value (V(i,j)), and
+            % index of the a' choice that achieved it (polAix(i,j))
+            % So, The first output updates the value function V (a_i, y_j)
+            % The second records the optimal policy for next-period assets
         end
     end
 
-    % Convergence check: norm of the change in V 
+
+%%Step 6%%  Convergence check: norm of the change in V 
     diffV = norm(V - V_old);
+    % After updating all states, I measure how much V changed.
+    % If it’s small enough, I stop. If not, I keep iterating.
+    
+
     if mod(iter,50)==0
-        % From the light progress I can tell that it’s iterating:
+    % From the light progress I can tell that it’s iterating:
         disp(['Iter ', num2str(iter), '  ||V - V_old|| = ', num2str(diffV)]);
     end
 end
@@ -105,13 +144,19 @@ else
     disp(['Converged in ', num2str(iter), ' iterations.  Diff = ', num2str(diffV)]);
 end
 
-% Recover policy levels for a' and c using the argmax indices
+
+
+%%Step 7%%  Recover policy levels for a' and c using the argmax indices
 polA = agrid(polAix);                          % a'(a,y)
 for j = 1:Ny
     for i = 1:Na
         polC(i,j) = agrid(i) + ey(j) - polA(i,j)/(1+r);  % c = a + exp(y) - a'/(1+r)
     end
 end
+% polA gives the optimal next-period assets for each state.
+% polC computes the corresponding optimal consumption using the budget constraint.
+% Thus I get the value function, the savings policy function, and the consumption policy function
+
 
 %% ----------------------------------------------------
 %  6) PLOTS (Value function and Policies)
@@ -148,6 +193,7 @@ xlabel('Assets a'); ylabel('Consumption c(a,y)');
 title('Policy Function for Consumption across y-states');
 legend(cellstr("y="+string(round(ygrid,3))),'Location','southeast');
 grid on; hold off;
+
 
 %% ----------------------------------------------------
 %  7) SIMULATION (1000 periods; discard first 500)
@@ -213,6 +259,7 @@ xlabel('Time (post-burn-in)');
 % Standard deviation of simulated consumption:
 std_c = std(c_sim, 'omitnan');
 disp(['Std dev of simulated consumption (post-burn-in): ', num2str(std_c)]);
+
 
 %% ----------------------------------------------------
 %  8) NOTES FOR PART (d) 
